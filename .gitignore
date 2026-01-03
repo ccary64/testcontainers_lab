@@ -2,3 +2,21 @@ __pycache__/
 .venv/
 .vscode/
 .pytest_cache/
+
+# Maven build artifacts
+target/
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
