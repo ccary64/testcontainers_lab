@@ -13,6 +13,7 @@ class Customer:
 def create_table():
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute("DROP TABLE IF EXISTS customers")
             cur.execute("""
                 CREATE TABLE customers (
                     id serial PRIMARY KEY,

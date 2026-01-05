@@ -5,16 +5,16 @@ This repository demonstrates containerized testing with Testcontainers in both P
 ## Project Structure
 
 - `hostmode/`: Host network mode implementations for podman environments like devpod
-  - `python/`: Python implementation using Testcontainers with PostgreSQL in host mode
-  - `java/`: Java implementation using direct Docker/Podman commands for host mode PostgreSQL (Testcontainers workaround)
+  - `python/`: Python implementation using Testcontainers with PostgreSQL, Kafka, and integration tests in host mode
+  - `java/`: Java implementation using direct Docker/Podman commands for host mode PostgreSQL and Kafka (Testcontainers workaround), including integration tests
   - `README.md`: Detailed documentation for hostmode implementations
 
 ## Overview
 
-The project implements a simple customer management system with database integration, demonstrating different approaches to containerized testing:
+The project implements a simple customer management system with database integration, Kafka messaging examples, and integration tests combining both services, demonstrating different approaches to containerized testing:
 
-- **Python Version**: Uses Testcontainers with PostgreSQL in host network mode
-- **Java Version**: Uses direct Docker or Podman commands for PostgreSQL in host mode (Testcontainers workaround)
+- **Python Version**: Uses Testcontainers with PostgreSQL and Kafka (KRaft mode) in host network mode, including integration tests
+- **Java Version**: Uses direct Docker or Podman commands for PostgreSQL and Kafka (KRaft mode) in host mode (Testcontainers workaround), including integration tests combining both services and a `ContainerHelper` utility class
 
 ## Testcontainers Host Mode Support
 

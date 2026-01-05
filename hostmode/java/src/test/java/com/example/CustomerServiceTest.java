@@ -12,61 +12,15 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class CustomerServiceTest {
 
-    private static Process postgresProcess;
-    private static String containerId;
-    private static String containerRuntime;
-
+    private static ContainerHelper containerHelper;
     private CustomerService customerService;
-
-    private static String detectContainerRuntime() throws IOException, InterruptedException {
-        // Try docker first
-        try {
-            ProcessBuilder checkDocker = new ProcessBuilder("docker", "--version");
-            Process dockerProcess = checkDocker.start();
-            if (dockerProcess.waitFor() == 0) {
-                return "docker";
-            }
-        } catch (Exception e) {
-            // Docker not available
-        }
-
-        // Try podman
-        try {
-            ProcessBuilder checkPodman = new ProcessBuilder("podman", "--version");
-            Process podmanProcess = checkPodman.start();
-            if (podmanProcess.waitFor() == 0) {
-                return "podman";
-            }
-        } catch (Exception e) {
-            // Podman not available
-        }
-
-        throw new RuntimeException("Neither docker nor podman is available on this system");
-    }
 
     @BeforeAll
     public static void setUpDatabase() throws IOException, InterruptedException {
-        containerRuntime = detectContainerRuntime();
-
-        // Start PostgreSQL container directly with detected runtime
-        ProcessBuilder pb = new ProcessBuilder(
-            containerRuntime, "run", "-d", "--network", "host",
-            "-e", "POSTGRES_DB=test",
-            "-e", "POSTGRES_USER=test",
-            "-e", "POSTGRES_PASSWORD=test",
-            "postgres:16-alpine"
-        );
-        // pb.inheritIO(); // Remove to avoid corrupted channel warning
-        postgresProcess = pb.start();
-        postgresProcess.waitFor();
-
-        // Get container ID
-        ProcessBuilder getIdPb = new ProcessBuilder(containerRuntime, "ps", "-q", "-l");
-        Process getIdProcess = getIdPb.start();
-        containerId = new String(getIdProcess.getInputStream().readAllBytes()).trim();
-
-        // Wait a bit for PostgreSQL to start
-        Thread.sleep(3000);
+        containerHelper = new ContainerHelper();
+        containerHelper.initialize();
+        containerHelper.startPostgresContainer();
+        containerHelper.waitForServices(3);
 
         System.setProperty("DB_HOST", "localhost");
         System.setProperty("DB_PORT", "5432");
@@ -77,9 +31,8 @@ public class CustomerServiceTest {
 
     @AfterAll
     public static void tearDown() throws IOException, InterruptedException {
-        if (containerId != null && !containerId.isEmpty()) {
-            new ProcessBuilder(containerRuntime, "stop", containerId).start().waitFor();
-            new ProcessBuilder(containerRuntime, "rm", containerId).start().waitFor();
+        if (containerHelper != null) {
+            containerHelper.cleanup();
         }
     }
 
