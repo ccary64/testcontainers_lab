@@ -4,7 +4,10 @@ import json
 from testcontainers.postgres import PostgresContainer
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
-from kafka import KafkaProducer, KafkaConsumer
+from confluent_kafka.schema_registry import SchemaRegistryClient
+from confluent_kafka.schema_registry.json_schema import JSONSerializer, JSONDeserializer
+from confluent_kafka.serialization import SerializationContext, MessageField
+from confluent_kafka import Producer, Consumer
 
 from customers import customers
 
@@ -12,20 +15,30 @@ postgres = PostgresContainer("postgres:16-alpine")
 postgres.ports = {}
 postgres.with_kwargs(network_mode="host")
 
-kafka_container = DockerContainer("confluentinc/cp-kafka:7.6.0") \
-    .with_env("KAFKA_PROCESS_ROLES", "broker,controller") \
-    .with_env("KAFKA_NODE_ID", "1") \
-    .with_env("KAFKA_CONTROLLER_QUORUM_VOTERS", "1@localhost:9093") \
-    .with_env("KAFKA_LISTENERS", "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093") \
-    .with_env("KAFKA_ADVERTISED_LISTENERS", "PLAINTEXT://localhost:9092") \
-    .with_env("KAFKA_CONTROLLER_LISTENER_NAMES", "CONTROLLER") \
-    .with_env("KAFKA_INTER_BROKER_LISTENER_NAME", "PLAINTEXT") \
-    .with_env("KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR", "1") \
-    .with_env("KAFKA_TRANSACTION_STATE_LOG_MIN_ISR", "1") \
-    .with_env("KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR", "1") \
-    .with_env("KAFKA_AUTO_CREATE_TOPICS_ENABLE", "true") \
-    .with_env("CLUSTER_ID", "4L6_R_m3S0qK4f3Y-1Dshg") \
+kafka_container = (
+    DockerContainer("confluentinc/cp-kafka:7.6.0")
+    .with_env("KAFKA_PROCESS_ROLES", "broker,controller")
+    .with_env("KAFKA_NODE_ID", "1")
+    .with_env("KAFKA_CONTROLLER_QUORUM_VOTERS", "1@localhost:9093")
+    .with_env("KAFKA_LISTENERS", "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093")
+    .with_env("KAFKA_ADVERTISED_LISTENERS", "PLAINTEXT://localhost:9092")
+    .with_env("KAFKA_CONTROLLER_LISTENER_NAMES", "CONTROLLER")
+    .with_env("KAFKA_INTER_BROKER_LISTENER_NAME", "PLAINTEXT")
+    .with_env("KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR", "1")
+    .with_env("KAFKA_TRANSACTION_STATE_LOG_MIN_ISR", "1")
+    .with_env("KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR", "1")
+    .with_env("KAFKA_AUTO_CREATE_TOPICS_ENABLE", "true")
+    .with_env("CLUSTER_ID", "4L6_R_m3S0qK4f3Y-1Dshg")
     .with_kwargs(network_mode="host")
+)
+
+schema_registry = (
+    DockerContainer("confluentinc/cp-schema-registry:7.6.0")
+    .with_env("SCHEMA_REGISTRY_HOST_NAME", "schema-registry")
+    .with_env("SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS", "localhost:9092")
+    .with_env("SCHEMA_REGISTRY_LISTENERS", "http://0.0.0.0:8081")
+    .with_kwargs(network_mode="host")
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -33,15 +46,19 @@ def setup_integration(request):
     postgres.start()
     kafka_container.start()
     wait_for_logs(kafka_container, "Kafka Server started")
+    schema_registry.start()
+    wait_for_logs(schema_registry, "Server started, listening for requests")
 
     def remove_containers():
         postgres.stop()
         kafka_container.stop()
+        schema_registry.stop()
 
     request.addfinalizer(remove_containers)
 
     # Set up database environment variables
     import os
+
     os.environ["DB_HOST"] = "localhost"
     os.environ["DB_PORT"] = "5432"
     os.environ["DB_USERNAME"] = postgres.username
@@ -56,10 +73,33 @@ def setup_data():
 
 
 def test_customer_creation_with_kafka_event():
-    topic = "customer-events"
+    topic = "customer-events-1"
     customer_name = "Jane Doe"
     customer_email = "jane.doe@example.com"
     bootstrap_server = "localhost:9092"
+    schema_registry_url = "http://localhost:8081"
+
+    # JSON Schema for customer events
+    customer_event_schema_str = """
+    {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "eventType": {"type": "string"},
+            "customerId": {"type": "integer"},
+            "customerName": {"type": "string"},
+            "customerEmail": {"type": "string"},
+            "timestamp": {"type": "integer"}
+        },
+        "required": ["eventType", "customerId", "customerName", "customerEmail", "timestamp"]
+    }
+    """
+
+    # Create schema registry client
+    schema_registry_client = SchemaRegistryClient({"url": schema_registry_url})
+
+    # Create JSON serializer
+    json_serializer = JSONSerializer(customer_event_schema_str, schema_registry_client)
 
     # Create customer in database
     customers.create_customer(customer_name, customer_email)
@@ -70,33 +110,68 @@ def test_customer_creation_with_kafka_event():
     assert created_customer.name == customer_name
     assert created_customer.email == customer_email
 
-    # Send event to Kafka
+    # Send event to Kafka using JSON Schema
     event_data = {
         "eventType": "CUSTOMER_CREATED",
         "customerId": created_customer.id,
         "customerName": customer_name,
         "customerEmail": customer_email,
-        "timestamp": 1234567890  # Mock timestamp for testing
+        "timestamp": 1234567890,  # Mock timestamp for testing
     }
 
-
-    producer = KafkaProducer(
-        bootstrap_servers=bootstrap_server,
-        value_serializer=lambda v: json.dumps(v).encode('utf-8')
+    # Producer with JSON serialization
+    producer = Producer(
+        {
+            "bootstrap.servers": bootstrap_server,
+        }
     )
-    producer.send(topic, key=str(created_customer.id).encode('utf-8'), value=event_data)
-    producer.flush()  # Ensure message is sent
-    producer.close()
 
-    # TODO: Fix consumer for KRaft mode
-    # For now, just verify that the message was sent (producer didn't throw an exception)
-    # and that the customer was created successfully
-    print("Message sent to Kafka successfully")
+    # Serialize the message
+    serialized_value = json_serializer(
+        event_data, SerializationContext(topic, MessageField.VALUE)
+    )
+
+    # Produce the message
+    producer.produce(
+        topic=topic,
+        value=serialized_value,
+        key=str(created_customer.id).encode("utf-8"),
+    )
+    producer.flush()
+
+    print("JSON Schema message sent to Kafka successfully")
 
 
 def test_multiple_customers_with_events():
-    topic = "customer-events"
+    topic = "customer-events-2"
     bootstrap_server = "localhost:9092"
+    schema_registry_url = "http://localhost:8081"
+
+    # JSON Schema for customer events
+    customer_event_schema_str = """
+    {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "eventType": {"type": "string"},
+            "customerId": {"type": "integer"},
+            "customerName": {"type": "string"},
+            "customerEmail": {"type": "string"},
+            "timestamp": {"type": "integer"}
+        },
+        "required": ["eventType", "customerId", "customerName", "customerEmail", "timestamp"]
+    }
+    """
+
+    # Create schema registry client
+    schema_registry_client = SchemaRegistryClient({"url": schema_registry_url})
+
+    # Create JSON serializer (no deserializer needed for JSON)
+    json_serializer = JSONSerializer(customer_event_schema_str, schema_registry_client)
+    json_deserializer = JSONDeserializer(
+        schema_registry_client=schema_registry_client,
+        schema_str=customer_event_schema_str,
+    )
 
     # Create multiple customers
     customers.create_customer("Charlie", "charlie@example.com")
@@ -106,10 +181,11 @@ def test_multiple_customers_with_events():
     all_customers = customers.get_all_customers()
     assert len(all_customers) == 2
 
-    # Send events for each customer
-    producer = KafkaProducer(
-        bootstrap_servers=bootstrap_server,
-        value_serializer=lambda v: json.dumps(v).encode('utf-8')
+    # Send events for each customer using JSON Schema
+    producer = Producer(
+        {
+            "bootstrap.servers": bootstrap_server,
+        }
     )
 
     for customer in all_customers:
@@ -118,34 +194,50 @@ def test_multiple_customers_with_events():
             "customerId": customer.id,
             "customerName": customer.name,
             "customerEmail": customer.email,
-            "timestamp": 1234567890
+            "timestamp": 1234567890,
         }
-        producer.send(topic, key=str(customer.id).encode('utf-8'), value=event_data)
+        # Serialize the message
+        serialized_value = json_serializer(
+            event_data, SerializationContext(topic, MessageField.VALUE)
+        )
+        producer.produce(
+            topic=topic, value=serialized_value, key=str(customer.id).encode("utf-8")
+        )
 
-    producer.close()
+    producer.flush()
 
-    # Consume and verify all events
-    consumer = KafkaConsumer(
-        topic,
-        bootstrap_servers=bootstrap_server,
-        auto_offset_reset='earliest',
-        consumer_timeout_ms=10000,
-        value_deserializer=lambda v: json.loads(v.decode('utf-8')),
-        key_deserializer=lambda v: v.decode('utf-8') if v else None
-    )
+    # Consume and verify all events using JSON Consumer
+    consumer_conf = {
+        "bootstrap.servers": bootstrap_server,
+        "group.id": "test-group",
+        "auto.offset.reset": "earliest",
+        "enable.auto.commit": True,
+    }
+    consumer = Consumer(consumer_conf)
+
+    consumer.subscribe([topic])
 
     messages = []
-    for message in consumer:
-        messages.append(message)
+    try:
+        while len(messages) < 2:
+            msg = consumer.poll(10.0)
+            if msg is None:
+                break
+            if msg.error():
+                print(f"Consumer error: {msg.error()}")
+                continue
+            deserialized_value = json_deserializer(
+                msg.value(), SerializationContext(topic, MessageField.VALUE)
+            )
+            messages.append(deserialized_value)
+    finally:
+        consumer.close()
 
-    consumer.close()
-
-    assert len(messages) == 3
+    assert len(messages) == 2
 
     # Verify each event
-    for message in messages:
-        event = message.value
-        assert event["eventType"] == "CUSTOMER_REGISTERED" or event["eventType"] == "CUSTOMER_CREATED"
+    for event in messages:
+        assert event["eventType"] == "CUSTOMER_REGISTERED"
         assert "customerId" in event
         assert "customerName" in event
         assert "customerEmail" in event
