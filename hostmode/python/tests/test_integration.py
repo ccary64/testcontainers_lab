@@ -52,21 +52,7 @@ schema_registry = (
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_integration():
-    import time
-    from db.connection import get_connection
-
     postgres.start()
-    # Wait for postgres to be ready
-    for _ in range(30):
-        try:
-            with get_connection() as conn:
-                conn.cursor().execute("SELECT 1")
-            break
-        except:
-            time.sleep(1)
-    else:
-        pytest.skip("PostgreSQL not ready")
-
     kafka_container.start()
     wait_for_logs(kafka_container, "Kafka Server started")
     schema_registry.start()

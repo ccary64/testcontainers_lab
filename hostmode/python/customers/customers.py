@@ -20,7 +20,7 @@ def create_table() -> None:
                     id serial PRIMARY KEY,
                     name varchar not null,
                     email varchar not null unique)
-                """
+                """,
         )
         conn.commit()
 

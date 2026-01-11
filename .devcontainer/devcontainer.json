@@ -10,11 +10,11 @@
                 "ms-python.python",
                 "ms-python.black-formatter",
                 "ms-python.ruff",
-                "ms-python.mypy-type-checker"
+                "astral-sh.ty"
             ]
         }
     },
-    "postCreateCommand": "pip install -e .[dev]",
+    "postCreateCommand": "uv sync --dev",
     "forwardPorts": [5432, 9092, 8081],
     "remoteUser": "vscode"
 }
