@@ -57,10 +57,10 @@ jobs:
                   cd hostmode/python
                   uv run black --check .
 
-            - name: Upload coverage to CodeClimate
-              uses: paambaati/codeclimate-action@v9
-              env:
-                  CC_TEST_REPORTER_ID: ${{ secrets.CC_TEST_REPORTER_ID }}
-              with:
-                  coverageCommand: echo "Coverage uploaded"
-                  coverageLocations: hostmode/python/coverage.xml:coverage.py
+            #- name: Upload coverage to CodeClimate
+            #  uses: paambaati/codeclimate-action@v9
+            #  env:
+            #      CC_TEST_REPORTER_ID: ${{ secrets.CC_TEST_REPORTER_ID }}
+            #  with:
+            #      coverageCommand: echo "Coverage uploaded"
+            #      coverageLocations: hostmode/python/coverage.xml:coverage.py
