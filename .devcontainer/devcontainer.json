@@ -1,0 +1,20 @@
+{
+    "name": "Python Testcontainers Host Mode",
+    "image": "mcr.microsoft.com/devcontainers/python:3.10",
+    "features": {
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.black-formatter",
+                "ms-python.ruff",
+                "ms-python.mypy-type-checker"
+            ]
+        }
+    },
+    "postCreateCommand": "pip install -e .[dev]",
+    "forwardPorts": [5432, 9092, 8081],
+    "remoteUser": "vscode"
+}

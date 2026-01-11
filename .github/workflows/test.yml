@@ -1,0 +1,66 @@
+name: Test
+
+on:
+    push:
+        branches: [main, master]
+    pull_request:
+        branches: [main, master]
+
+jobs:
+    test:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Set up uv
+              uses: astral-sh/setup-uv@v3
+              with:
+                  version: "latest"
+
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.10"
+
+            - name: Install dependencies
+              run: |
+                  cd hostmode/python
+                  uv sync --dev
+
+            - name: Run tests
+              run: |
+                  cd hostmode/python
+                  uv run pytest --junitxml=test-results.xml --cov=. --cov-report=xml
+
+            - name: Publish test results
+              uses: dorny/test-reporter@v1
+              if: success() || failure()
+              with:
+                  name: Test Results
+                  path: hostmode/python/test-results.xml
+                  reporter: python-pytest
+
+            - name: Run Ruff
+              run: |
+                  cd hostmode/python
+                  uv run ruff check .
+
+            - name: Run Ty
+              run: |
+                  cd hostmode/python
+                  uv run ty check .
+
+            - name: Check Black formatting
+              run: |
+                  cd hostmode/python
+                  uv run black --check .
+
+            - name: Upload coverage to CodeClimate
+              uses: codeclimate/codeclimate@0.2.0
+              env:
+                  CC_TEST_REPORTER_ID: ${{ secrets.CC_TEST_REPORTER_ID }}
+              with:
+                  coverageCommand: echo "Coverage uploaded"
+                  coverageLocations: hostmode/python/coverage.xml:coverage.py

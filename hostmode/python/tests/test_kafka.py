@@ -1,15 +1,8 @@
 import pytest
-import time
-
-from confluent_kafka import Producer, Consumer
-from confluent_kafka.schema_registry import SchemaRegistryClient
-from confluent_kafka.schema_registry.json_schema import (
-    JSONSerializer,
-    JSONDeserializer,
-)
-from confluent_kafka.schema_registry import SerializationContext, MessageField
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
+
+from kafka import kafka as kafka_utils
 
 kafka_container = (
     DockerContainer("confluentinc/cp-kafka:7.6.0")
@@ -44,17 +37,14 @@ schema_registry = (
 
 
 @pytest.fixture(scope="module", autouse=True)
-def setup_kafka(request):
+def setup_kafka():
     kafka_container.start()
     wait_for_logs(kafka_container, "Kafka Server started")
     schema_registry.start()
     wait_for_logs(schema_registry, "Server started, listening for requests")
-
-    def remove_container():
-        kafka_container.stop()
-        schema_registry.stop()
-
-    request.addfinalizer(remove_container)
+    yield
+    kafka_container.stop()
+    schema_registry.stop()
 
 
 def test_kafka_produce_and_consume():
@@ -78,60 +68,25 @@ def test_kafka_produce_and_consume():
     }
     """
 
-    schema_registry_client = SchemaRegistryClient({"url": schema_registry_url})
-
-    # Producer
-    producer_conf = {"bootstrap.servers": bootstrap_server}
-    producer = Producer(producer_conf)
-    json_serializer = JSONSerializer(
-        schema_registry_client=schema_registry_client, schema_str=schema_str
-    )
     message = {"message": "Hello, Kafka with KRaft and Schema Registry!"}
 
     # Produce the message
-    print("Producing message...")
-    producer.produce(
+    kafka_utils.produce_message(
         topic,
-        value=json_serializer(message, SerializationContext(topic, MessageField.VALUE)),
-    )
-    producer.flush()
-    print("Message produced")
-
-    # Consumer
-    consumer_conf = {
-        "bootstrap.servers": bootstrap_server,
-        "group.id": f"test-group-{int(time.time())}",
-        "auto.offset.reset": "earliest",
-        "enable.auto.commit": True,
-    }
-    consumer = Consumer(consumer_conf)
-    consumer.subscribe([topic])
-
-    json_deserializer = JSONDeserializer(
-        schema_registry_client=schema_registry_client, schema_str=schema_str
+        message,
+        bootstrap_server,
+        schema_registry_url,
+        schema_str,
     )
 
-    received_messages = []
-    timeout = 10  # seconds
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        print("Polling for message...")
-        msg = consumer.poll(1.0)
-        if msg is None:
-            print("No message received")
-            continue
-        if msg.error():
-            print(f"Consumer error: {msg.error()}")
-            continue
-        print("Message received, deserializing...")
-        deserialized_value = json_deserializer(
-            msg.value(), SerializationContext(topic, MessageField.VALUE)
-        )
-        received_messages.append(deserialized_value)
-        print(f"Deserialized: {deserialized_value}")
-        break  # Only need one message
-
-    consumer.close()
+    # Consume the message
+    received_messages = kafka_utils.consume_messages(
+        topic,
+        1,
+        bootstrap_server,
+        schema_registry_url,
+        schema_str,
+    )
 
     assert len(received_messages) == 1
     assert (

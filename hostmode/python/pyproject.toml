@@ -1,16 +1,115 @@
 [project]
-name = "python"
+name = "testcontainers-python-hostmode-tutorial"
 version = "0.1.0"
-description = "Add your description here"
+description = "This is a demonstration project showing Testcontainers usage in Python, with a focus on **host network mode** for podman/devpod environments."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "confluent-kafka[json]>=2.13.0",
     "psycopg>=3.3.2",
+]
+
+[tool.uv]
+dev-dependencies = [
     "pytest>=9.0.2",
+    "pytest-cov>=4.0",
+    "ty>=0.0.11",
+    "ruff>=0.1",
+    "black>=22.0",
     "testcontainers[postgres,kafka]>=4.13.3",
-    "confluent-kafka>=2.7.0",
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = ["tests"]
+pythonpath = [".", ".venv/lib/python3.10/site-packages"]
 filterwarnings = ["ignore::DeprecationWarning"]
+
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "C90",
+    "I",
+    "N",
+    "UP",
+    "YTT",
+    "S",
+    "BLE",
+    "FBT",
+    "B",
+    "A",
+    "COM",
+    "C4",
+    "DTZ",
+    "T10",
+    "DJ",
+    "EM",
+    "EXE",
+    "FA",
+    "ISC",
+    "ICN",
+    "G",
+    "INP",
+    "PIE",
+    "T20",
+    "PYI",
+    "PT",
+    "Q",
+    "RSE",
+    "RET",
+    "SLF",
+    "SLOT",
+    "SIM",
+    "TID",
+    "TCH",
+    "INT",
+    "ARG",
+    "PTH",
+    "ERA",
+    "PD",
+    "PGH",
+    "PL",
+    "TRY",
+    "FLY",
+    "NPY",
+    "AIR",
+    "PERF",
+    "FURB",
+    "LOG",
+    "RUF",
+]
+ignore = ["E501", "S101", "FBT001", "FBT002", "FBT003"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["customers", "db"]
+
+[tool.black]
+line-length = 88
+target-version = ['py310']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.ty]
