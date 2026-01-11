@@ -58,7 +58,7 @@ jobs:
                   uv run black --check .
 
             - name: Upload coverage to CodeClimate
-              uses: codeclimate/codeclimate@0.2.0
+              uses: paambaati/codeclimate-action@v9
               env:
                   CC_TEST_REPORTER_ID: ${{ secrets.CC_TEST_REPORTER_ID }}
               with:
