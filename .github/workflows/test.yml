@@ -40,7 +40,7 @@ jobs:
               with:
                   name: Test Results
                   path: hostmode/python/test-results.xml
-                  reporter: python-pytest
+                  reporter: junit
 
             - name: Run Ruff
               run: |
